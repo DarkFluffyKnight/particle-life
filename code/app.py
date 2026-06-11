@@ -3,11 +3,11 @@ import pygame
 from numba import njit, prange
 
 WIDTH, HEIGHT = 1920 / 2, 1200 / 2
-N_PARTICLES = 500
+N_PARTICLES = 1000
 N_TYPES = 4
 COLOURS = ["red", "orange", "yellow", "green", "blue", "purple"]
 
-R_MIN = 20
+R_MIN = 50
 R_MAX = 200
 # V_MAX = 1000
 
@@ -15,6 +15,8 @@ TICKS = 60
 DT = 1 / TICKS
 np.random.seed(42)
 
+# Random attraction matrix, each particle is attracted to its own type
+# Attraction is positive, repulsion is negative
 ATTRACTION_MATRIX = np.random.uniform(low=-1, high=1, size=(N_TYPES, N_TYPES))
 for i in range(N_TYPES):
     ATTRACTION_MATRIX[i, i] = 1
@@ -23,7 +25,7 @@ for i in range(N_TYPES):
 # for i in range(N_TYPES):
 #     ATTRACTION_MATRIX[i][i] = 1
 
-# ATTRACTION_MATRIX = np.array([[1, 1], [-1, 1]])
+# ATTRACTION_MATRIX = np.array([[1, 1], [1, 1]])
 
 
 positions = np.random.rand(N_PARTICLES, 2) * np.array([WIDTH, HEIGHT])
@@ -33,7 +35,7 @@ types = np.random.choice(N_TYPES, N_PARTICLES)
 # types = np.random.randint(0, N_TYPES, N_PARTICLES)
 
 
-def apply_smooth_force(p1: int, p2: int):
+def apply_force(p1: int, p2: int):
     """Apply force from particle 2 onto particle 1. Uses standard linear forces mechanism
 
     Args:
@@ -44,7 +46,29 @@ def apply_smooth_force(p1: int, p2: int):
     dist = np.linalg.norm(vect)
 
     if dist < R_MIN:
-        force = (R_MIN / dist) - 1
+        force = (dist / R_MIN) - 1  # force < 0
+    elif dist < R_MAX:
+        force = ATTRACTION_MATRIX[types[p1], types[p2]] * (
+            1 - abs((2 * dist - R_MAX - R_MIN) / (R_MAX - R_MIN))  # -2 <= force <= 2
+        )
+    else:
+        return
+
+    velocities[p1] += vect * force / dist
+
+
+def apply_smooth_force(p1: int, p2: int):
+    """Apply force from particle 2 onto particle 1. Uses polynomial force mechanism for smoother movement
+
+    Args:
+        p1 (int): index of particle 1
+        p2 (int): index of particle 2
+    """
+    vect = positions[p2] - positions[p1]
+    dist = np.linalg.norm(vect)
+
+    if dist < R_MIN:
+        force = (dist / R_MIN) - 1
     elif dist < R_MAX:
         force = (
             ATTRACTION_MATRIX[types[p1], types[p2]]
@@ -67,15 +91,15 @@ def update_velocities(positions, velocities):
         velocities (NumPy array): (N x 2) matrix of particle velocities
     """
     for i in prange(N_PARTICLES):
-        for j in prange(N_PARTICLES):
+        for j in range(N_PARTICLES):
             if i == j:
                 continue
 
-            vect = positions[i] - positions[j]
+            vect = positions[j] - positions[i]
             dist = np.linalg.norm(vect)
 
             if dist < R_MIN:
-                force = (R_MIN / dist) - 1
+                force = (dist / R_MIN) - 1
             elif dist < R_MAX:
                 force = ATTRACTION_MATRIX[types[i], types[j]] * (
                     1 - abs((2 * dist - R_MAX - R_MIN) / (R_MAX - R_MIN))
@@ -83,7 +107,7 @@ def update_velocities(positions, velocities):
             else:
                 force = 0
 
-            velocities[i] += vect * force / dist
+            velocities[i] += force * vect / dist
 
     velocities *= 0.95
 
