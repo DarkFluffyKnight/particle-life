@@ -84,7 +84,8 @@ def apply_smooth_force(p1: int, p2: int):
 
 @njit(parallel=True, fastmath=True)
 def update_velocities(positions, velocities):
-    """Update velocities of each particle with parallelisation for efficiency
+    """Update velocities of each particle with parallelisation for efficiency.
+    Uses numpy vectors and methods
 
     Args:
         positions (NumPy array): (N x 2) matrix of particle positions
@@ -120,6 +121,58 @@ def update_velocities(positions, velocities):
     velocities *= FRICTION
 
 
+@njit(parallel=True, fastmath=True)
+def update_velocities_components(positions, velocities):
+    """Update velocities of each particle with parallelisation for efficiency.
+    Breaks into components instead to avoid RAM and use cache instead.
+
+    Args:
+        positions (NumPy array): (N x 2) matrix of particle positions
+        velocities (NumPy array): (N x 2) matrix of particle velocities
+    """
+    for i in prange(N_PARTICLES):
+        # Vector components
+        # Total force (technically acceleration but nvm)
+        fx, fy = 0.0, 0.0
+        # Position i, avoids looking in positions[i] for each j
+        xi, yi = positions[i, 0], positions[i, 1]
+
+        # Avoid retrieving types[i] repeatedly for each j
+        type_i = types[i]
+
+        for j in range(N_PARTICLES):
+            # Skip comparing particles to themselves
+            if i == j:
+                continue
+
+            # Get relative position and distance
+            dx = positions[j, 0] - xi
+            dy = positions[j, 1] - yi
+
+            dist = (dx**2 + dy**2) ** 0.5
+
+            # Calculate force factor
+            if dist < R_MIN:
+                # If too close, repels particle i from j
+                force = (dist / R_MIN) - 1
+            elif dist < R_MAX:
+                # If in range, uses standard linear forces
+                force = ATTRACTION_MATRIX[type_i, types[j]] * (
+                    1 - abs((2 * dist - R_MAX - R_MIN) / (R_MAX - R_MIN))
+                )
+            else:
+                # If far away, no effect
+                force = 0.0
+
+            # Scale position vector appropriately and add to total force
+            fx += force * dx / dist
+            fy += force * dy / dist
+
+        # Applying friction at the end saves time instead of doing it for each j
+        velocities[i, 0] = (velocities[i, 0] + fx) * FRICTION
+        velocities[i, 1] = (velocities[i, 1] + fy) * FRICTION
+
+
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 clock = pygame.time.Clock()
@@ -138,7 +191,8 @@ while running:
     # fill the screen with a color to wipe away anything from last frame
     screen.fill("black")
 
-    update_velocities(positions, velocities)
+    # update_velocities(positions, velocities)
+    update_velocities_components(positions, velocities)
 
     # Update position
     positions = np.mod(positions + (velocities * DT), [WIDTH, HEIGHT])
