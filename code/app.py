@@ -1,9 +1,14 @@
+from typing import Annotated, List, Literal
+
 import numpy as np
 import pygame
 from numba import njit, prange
+from numpy.typing import NDArray
+
+ParticleVector = Annotated[np.typing.NDArray[np.float64], Literal["N", 2]]
 
 WIDTH, HEIGHT = 1920 / 2, 1200 / 2
-N_PARTICLES = 1000
+N_PARTICLES = 2000
 N_TYPES = 4
 COLOURS = ["red", "orange", "yellow", "green", "blue", "purple"]
 
@@ -33,6 +38,26 @@ positions = np.random.rand(N_PARTICLES, 2) * np.array([WIDTH, HEIGHT])
 velocities = np.zeros((N_PARTICLES, 2))
 types = np.random.choice(N_TYPES, N_PARTICLES)
 # types = np.random.randint(0, N_TYPES, N_PARTICLES)
+
+
+def build_spatial_hash():
+    # Get number of rows, columns, cells
+    n_rows = int(np.ceil(HEIGHT / R_MAX))
+    n_cols = int(np.ceil(WIDTH / R_MAX))
+
+    n_cells = n_rows * n_cols
+
+    # List of lists
+    cells = [[] for i in range(n_cells)]
+
+    # For each particle, append it's id to the list corresponding to its cell
+    for i in range(N_PARTICLES):
+        cx = int(np.floor(positions[i, 0] / R_MAX))
+        cy = int(np.floor(positions[i, 1] / R_MAX))
+
+        cells[(cy * n_cols) + cx].append(i)
+
+    return cells
 
 
 def apply_force(p1: int, p2: int):
@@ -173,6 +198,77 @@ def update_velocities_components(positions, velocities):
         velocities[i, 1] = (velocities[i, 1] + fy) * FRICTION
 
 
+@njit(parallel=True, fastmath=True)
+def update_velocities_components_hash(
+    positions: NDArray[np.float64],
+    velocities: NDArray[np.float64],
+    spatial_hash: List[List[int]],
+):
+    """Update velocities of each particle with parallelisation for efficiency.
+    Breaks into components instead to avoid RAM and use cache instead.
+    Uses spatial hash to avoid n^2 processing
+
+    Args:
+        positions (NumPy array): (N x 2) matrix of particle positions
+        velocities (NumPy array): (N x 2) matrix of particle velocities
+        spatial_hash (list[list]): list of variable lists storing
+    """
+
+    n_rows = int(np.ceil(HEIGHT / R_MAX))
+    n_cols = int(np.ceil(WIDTH / R_MAX))
+    n_cells = n_rows * n_cols
+    for c1 in prange(n_cols):
+        cx, cy = divmod(c1, n_cols)
+
+        for i in spatial_hash[c1]:
+            # Vector components
+            # Total force (technically acceleration but nvm)
+            fx, fy = 0.0, 0.0
+            # Position i, avoids looking in positions[i] for each j
+            xi, yi = positions[i, 0], positions[i, 1]
+
+            # Avoid retrieving types[i] repeatedly for each j
+            type_i = types[i]
+
+            for cdx in range(-1, 2):
+                for cdy in range(-1, 2):
+                    c2x = (cx + cdx) % n_cols
+                    c2y = (cy + cdy) % n_rows
+                    c2 = (c2y * n_cols) + c2x
+
+                    for j in spatial_hash[c2]:
+                        # Skip comparing particles to themselves
+                        if i == j:
+                            continue
+
+                        # Get relative position and distance
+                        dx = positions[j, 0] - xi
+                        dy = positions[j, 1] - yi
+
+                        dist = (dx**2 + dy**2) ** 0.5
+
+                        # Calculate force factor
+                        if dist < R_MIN:
+                            # If too close, repels particle i from j
+                            force = (dist / R_MIN) - 1
+                        elif dist < R_MAX:
+                            # If in range, uses standard linear forces
+                            force = ATTRACTION_MATRIX[type_i, types[j]] * (
+                                1 - abs((2 * dist - R_MAX - R_MIN) / (R_MAX - R_MIN))
+                            )
+                        else:
+                            # If far away, no effect
+                            force = 0.0
+
+                        # Scale position vector appropriately and add to total force
+                        fx += force * dx / dist
+                        fy += force * dy / dist
+
+                    # Applying friction at the end saves time instead of doing it for each j
+                    velocities[i, 0] = (velocities[i, 0] + fx) * FRICTION
+                    velocities[i, 1] = (velocities[i, 1] + fy) * FRICTION
+
+
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 clock = pygame.time.Clock()
@@ -191,8 +287,12 @@ while running:
     # fill the screen with a color to wipe away anything from last frame
     screen.fill("black")
 
+    # Build spatial hash
+    cells = build_spatial_hash()
+
     # update_velocities(positions, velocities)
-    update_velocities_components(positions, velocities)
+    # update_velocities_components(positions, velocities)
+    update_velocities_components_hash(positions, velocities, cells)
 
     # Update position
     positions = np.mod(positions + (velocities * DT), [WIDTH, HEIGHT])
