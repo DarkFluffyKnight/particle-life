@@ -9,7 +9,7 @@ COLOURS = ["red", "orange", "yellow", "green", "blue", "purple"]
 
 R_MIN = 50
 R_MAX = 200
-# V_MAX = 1000
+FRICTION = 0.95
 
 TICKS = 60
 DT = 1 / TICKS
@@ -27,7 +27,7 @@ for i in range(N_TYPES):
 
 # ATTRACTION_MATRIX = np.array([[1, 1], [1, 1]])
 
-
+# Start with random positions and zero velocities
 positions = np.random.rand(N_PARTICLES, 2) * np.array([WIDTH, HEIGHT])
 # velocities = np.random.uniform(low=-V_MAX, high=V_MAX, size=(N_PARTICLES, 2))
 velocities = np.zeros((N_PARTICLES, 2))
@@ -36,7 +36,7 @@ types = np.random.choice(N_TYPES, N_PARTICLES)
 
 
 def apply_force(p1: int, p2: int):
-    """Apply force from particle 2 onto particle 1. Uses standard linear forces mechanism
+    """Apply force from particle 2 onto particle 1. Uses standard linear forces mechanism (unused)
 
     Args:
         p1 (int): index of particle 1
@@ -49,7 +49,7 @@ def apply_force(p1: int, p2: int):
         force = (dist / R_MIN) - 1  # force < 0
     elif dist < R_MAX:
         force = ATTRACTION_MATRIX[types[p1], types[p2]] * (
-            1 - abs((2 * dist - R_MAX - R_MIN) / (R_MAX - R_MIN))  # -2 <= force <= 2
+            1 - abs((2 * dist - R_MAX - R_MIN) / (R_MAX - R_MIN))  # -1 <= force <= 1
         )
     else:
         return
@@ -58,7 +58,7 @@ def apply_force(p1: int, p2: int):
 
 
 def apply_smooth_force(p1: int, p2: int):
-    """Apply force from particle 2 onto particle 1. Uses polynomial force mechanism for smoother movement
+    """Apply force from particle 2 onto particle 1. Uses polynomial force mechanism for smoother movement (unused)
 
     Args:
         p1 (int): index of particle 1
@@ -75,7 +75,7 @@ def apply_smooth_force(p1: int, p2: int):
             * 4
             * ((dist - R_MIN) / (R_MAX - R_MIN))
             * (1 - (dist - R_MIN) / (R_MAX - R_MIN))
-        )
+        )  # 4 * a * -(x^2 - (r_max + r_min)x  + r_max*r_min) / (r_max - r_min)^2
     else:
         return
 
@@ -92,24 +92,32 @@ def update_velocities(positions, velocities):
     """
     for i in prange(N_PARTICLES):
         for j in range(N_PARTICLES):
+            # Skip pcomparing particles to themselves
             if i == j:
                 continue
 
+            # Get relative position and distance
             vect = positions[j] - positions[i]
             dist = np.linalg.norm(vect)
 
+            # Calculate force factor
             if dist < R_MIN:
+                # If too close, repels
                 force = (dist / R_MIN) - 1
             elif dist < R_MAX:
+                # If in range, uses standard linear forces
                 force = ATTRACTION_MATRIX[types[i], types[j]] * (
                     1 - abs((2 * dist - R_MAX - R_MIN) / (R_MAX - R_MIN))
                 )
             else:
+                # If far away, no effect
                 force = 0
 
+            # Scale position vector appropriately and add to velocity
             velocities[i] += force * vect / dist
 
-    velocities *= 0.95
+    # Friction factor
+    velocities *= FRICTION
 
 
 pygame.init()
