@@ -7,18 +7,18 @@ from numpy.typing import NDArray
 
 ParticleVector = Annotated[np.typing.NDArray[np.float64], Literal["N", 2]]
 
-WIDTH, HEIGHT = 1920 / 2, 1200 / 2
-N_PARTICLES = 5000
-N_TYPES = 4
+WIDTH, HEIGHT = 1920, 1200
+N_PARTICLES = 7500
+N_TYPES = 6
 COLOURS = ["red", "orange", "yellow", "green", "blue", "purple"]
 
 R_MIN = 50
-# R_MIN = 100
 R_MAX = 200
 FRICTION = 0.9
 
+FPS = 60
 DT = 0.01
-np.random.seed(42)
+np.random.seed(25)
 
 # Random attraction matrix, each particle is attracted to its own type
 # Attraction is positive, repulsion is negative
@@ -387,6 +387,6 @@ while running:
     # flip() the display to put your work on screen
     pygame.display.flip()
 
-    clock.tick(60)  # limits FPS to 60
+    clock.tick(FPS)  # limits FPS to 60
 
 pygame.quit()
