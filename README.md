@@ -72,7 +72,6 @@ Press `Escape` or close the window to exit.
 particle life/
 ├── code/
 │   └── app.py        # Main simulation
-├── basic.py          # Earlier prototype
 └── particle_life/    # Python virtual environment
 ```
 
